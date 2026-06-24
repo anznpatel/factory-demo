@@ -1,0 +1,11 @@
+# Python
+backend/.venv/
+**/__pycache__/
+*.pyc
+
+# SQLite local databases
+*.db
+
+# Frontend
+frontend/node_modules/
+frontend/dist/

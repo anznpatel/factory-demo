@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import init_db
 from app.generator import seed_demo
+from app.routers import sessions as sessions_router
 
 
 @asynccontextmanager
@@ -34,6 +35,8 @@ app.add_middleware(
     allow_methods=["GET", "OPTIONS"],
     allow_headers=["*"],
 )
+
+app.include_router(sessions_router.router)
 
 
 @app.get("/api/health")

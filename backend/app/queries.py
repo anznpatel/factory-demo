@@ -142,13 +142,17 @@ def compute_kpis(conn: sqlite3.Connection, session_id: int) -> dict[str, Any]:
     """Compute the 4 session KPIs from laps + telemetry.
 
     Returns a dict with keys top_speed_kph, best_lap_ms, avg_throttle_pct,
-    max_tire_temp_c. Assumes the session exists and has laps/telemetry.
+    max_tire_temp_c. Assumes the session exists. Guards the empty case: when
+    a session has no laps or no telemetry samples the SQL aggregates return
+    NULL, which is coerced to 0 so callers never hit a float(None) TypeError.
     """
     best_row = conn.execute(
         "SELECT MIN(lap_time_ms) AS best_lap_ms FROM laps WHERE session_id = ?",
         (session_id,),
     ).fetchone()
-    best_lap_ms = int(best_row["best_lap_ms"]) if best_row is not None else 0
+    best_lap_ms = 0
+    if best_row is not None and best_row["best_lap_ms"] is not None:
+        best_lap_ms = int(best_row["best_lap_ms"])
 
     telem_row = conn.execute(
         """
@@ -165,10 +169,15 @@ def compute_kpis(conn: sqlite3.Connection, session_id: int) -> dict[str, Any]:
         (session_id,),
     ).fetchone()
 
-    top_speed_kph = float(telem_row["top_speed_kph"]) if telem_row is not None else 0.0
-    avg_throttle_pct = float(telem_row["avg_throttle_pct"]) if telem_row is not None else 0.0
+    # MAX over an empty set is NULL, so top_speed_kph acts as a sentinel for
+    # "at least one telemetry sample exists"; when it is NULL every other
+    # aggregate in the row is also NULL and must not be passed to float().
+    top_speed_kph = 0.0
+    avg_throttle_pct = 0.0
     max_tire_temp_c = 0.0
-    if telem_row is not None:
+    if telem_row is not None and telem_row["top_speed_kph"] is not None:
+        top_speed_kph = float(telem_row["top_speed_kph"])
+        avg_throttle_pct = float(telem_row["avg_throttle_pct"])
         max_tire_temp_c = float(
             max(
                 telem_row["max_fl"],

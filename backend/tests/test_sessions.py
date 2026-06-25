@@ -8,6 +8,8 @@ and determinism across repeated calls.
 
 from __future__ import annotations
 
+import sqlite3
+
 from fastapi.testclient import TestClient
 
 # Seeded identity mapping (architecture.md Section 3 / validation contract).
@@ -149,9 +151,11 @@ def test_detail_lap_count_equals_total_laps_and_laps_length(client: TestClient) 
 
 
 def test_detail_kpis_has_exactly_four_numeric_keys(client: TestClient) -> None:
-    """VAL-SESS-004: kpis has exactly the 4 keys, all numeric, within bounds."""
+    """VAL-SESS-004: kpis has exactly the 4 keys, all numeric, within bounds,
+    and max_tire_temp_c strictly exceeds the session's ambient_temp_c."""
     for sid in (1, 2, 3):
-        kpis = client.get(f"/api/sessions/{sid}").json()["kpis"]
+        detail = client.get(f"/api/sessions/{sid}").json()
+        kpis = detail["kpis"]
         assert set(kpis.keys()) == KPI_KEYS
         assert isinstance(kpis["top_speed_kph"], (int, float))
         assert isinstance(kpis["best_lap_ms"], int)
@@ -161,6 +165,7 @@ def test_detail_kpis_has_exactly_four_numeric_keys(client: TestClient) -> None:
         assert 0 <= kpis["avg_throttle_pct"] <= 100
         assert 75000 <= kpis["best_lap_ms"] <= 115000
         assert 40 <= kpis["max_tire_temp_c"] <= 200
+        assert kpis["max_tire_temp_c"] > detail["ambient_temp_c"]
 
 
 def test_kpi_best_lap_matches_min_lap_time_and_is_best(client: TestClient) -> None:
@@ -230,6 +235,59 @@ def test_kpi_max_tire_temp_matches_max_of_four_channels(client: TestClient) -> N
             assert abs(kpis["max_tire_temp_c"] - float(expected)) <= 0.1
     finally:
         conn.close()
+
+
+def test_compute_kpis_handles_session_with_zero_telemetry(
+    temp_db: sqlite3.Connection,
+) -> None:
+    """compute_kpis must not raise on a session with no telemetry samples.
+
+    SQL aggregates (MAX/AVG) return NULL over an empty set; the function
+    guards those NULLs and returns 0-valued telemetry KPIs instead of a
+    float(None) TypeError. best_lap_ms still reflects laps when present.
+    """
+    from app.queries import compute_kpis
+
+    conn = temp_db
+    conn.execute(
+        "INSERT INTO sessions (id, track_name, car_id, driver, weather, "
+        "ambient_temp_c, started_at, ended_at, total_laps) "
+        "VALUES (1, 'Test', 'C1', 'D1', 'dry', 22.0, '2024-01-01T00:00:00Z', "
+        "'2024-01-01T00:02:00Z', 1)"
+    )
+    conn.execute(
+        "INSERT INTO laps (id, session_id, lap_number, lap_time_ms, started_at_ms, is_best) "
+        "VALUES (10, 1, 1, 90000, 0, 1)"
+    )
+    conn.commit()
+    kpis = compute_kpis(conn, 1)
+    assert set(kpis.keys()) == KPI_KEYS
+    assert kpis["best_lap_ms"] == 90000
+    assert kpis["top_speed_kph"] == 0.0
+    assert kpis["avg_throttle_pct"] == 0.0
+    assert kpis["max_tire_temp_c"] == 0.0
+
+
+def test_compute_kpis_handles_session_with_no_laps_or_telemetry(
+    temp_db: sqlite3.Connection,
+) -> None:
+    """compute_kpis on a session with no laps and no telemetry returns 0-valued KPIs."""
+    from app.queries import compute_kpis
+
+    conn = temp_db
+    conn.execute(
+        "INSERT INTO sessions (id, track_name, car_id, driver, weather, "
+        "ambient_temp_c, started_at, ended_at, total_laps) "
+        "VALUES (1, 'Test', 'C1', 'D1', 'dry', 22.0, '2024-01-01T00:00:00Z', "
+        "'2024-01-01T00:02:00Z', 0)"
+    )
+    conn.commit()
+    kpis = compute_kpis(conn, 1)
+    assert set(kpis.keys()) == KPI_KEYS
+    assert kpis["best_lap_ms"] == 0
+    assert kpis["top_speed_kph"] == 0.0
+    assert kpis["avg_throttle_pct"] == 0.0
+    assert kpis["max_tire_temp_c"] == 0.0
 
 
 def test_detail_and_kpis_deterministic_across_calls(client: TestClient) -> None:

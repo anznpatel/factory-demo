@@ -126,11 +126,24 @@ def test_telemetry_fk_rejects_dangling_lap(temp_db: sqlite3.Connection) -> None:
 
 
 def test_alerts_fk_rejects_dangling_session() -> None:
-    """An alert cannot reference a session that does not exist."""
-    # Fresh in-memory DB to test FK enforcement independently.
+    """An alert cannot reference a session that does not exist.
+
+    A real lap is inserted first so lap_id is valid; the only remaining FK
+    violation is the session_id reference, making the IntegrityError
+    attributable to the session_id FK specifically (not a dangling lap_id).
+    """
     conn = connect(":memory:")
     init_db(conn)
     try:
+        conn.execute(
+            "INSERT INTO sessions (id, track_name, car_id, driver, weather, ambient_temp_c,"
+            " started_at, ended_at, total_laps) VALUES (1,'T','C','D','dry',20,'a','b',1)"
+        )
+        conn.execute(
+            "INSERT INTO laps (id, session_id, lap_number, lap_time_ms, started_at_ms, is_best)"
+            " VALUES (1, 1, 1, 90000, 0, 1)"
+        )
+        conn.commit()
         with pytest.raises(sqlite3.IntegrityError):
             conn.execute(
                 "INSERT INTO alerts (session_id, lap_id, t_ms, type, severity, message)"

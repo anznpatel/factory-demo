@@ -66,7 +66,10 @@ export function DashboardLayout() {
       <div data-testid="dashboard-root">
         <ErrorState
           message="Failed to load sessions"
-          onRetry={() => void sessionsQuery.refetch()}
+          onRetry={() => {
+            void sessionsQuery.refetch()
+            void lapsQuery.refetch()
+          }}
         />
       </div>
     )
@@ -104,7 +107,14 @@ export function DashboardLayout() {
       <section className="dashboard-body">
         <KPISummary sessionId={sessionId} />
         <AlertsPanel sessionId={sessionId} />
-        <ChartsGrid sessionId={sessionId} lap={effectiveLap} enabled={lapsReady} />
+        {lapsQuery.isError ? (
+          <ErrorState
+            message="Failed to load laps"
+            onRetry={() => void lapsQuery.refetch()}
+          />
+        ) : (
+          <ChartsGrid sessionId={sessionId} lap={effectiveLap} enabled={lapsReady} />
+        )}
       </section>
     </div>
   )

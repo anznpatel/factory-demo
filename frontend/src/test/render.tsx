@@ -2,7 +2,8 @@ import type { ReactElement } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render } from '@testing-library/react'
 
-/** Render a component tree wrapped in a fresh QueryClientProvider. */
+/** Render a component tree wrapped in a fresh QueryClientProvider. The
+ *  returned `rerender` preserves the provider so hooks still resolve. */
 export function renderWithQueryClient(ui: ReactElement) {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -12,5 +13,12 @@ export function renderWithQueryClient(ui: ReactElement) {
   const result = render(
     <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
   )
-  return { ...result, queryClient }
+  return {
+    ...result,
+    queryClient,
+    rerender: (newUi: ReactElement) =>
+      result.rerender(
+        <QueryClientProvider client={queryClient}>{newUi}</QueryClientProvider>,
+      ),
+  }
 }

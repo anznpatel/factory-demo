@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
-import { useAlerts } from '../hooks/useAlerts'
 import { useLaps } from '../hooks/useLaps'
-import { useSession } from '../hooks/useSession'
 import { useSessions } from '../hooks/useSessions'
 import { useTelemetry } from '../hooks/useTelemetry'
 import { DEFAULT_SESSION_ID } from '../config'
 import { SessionSelector } from './SessionSelector'
 import { LapSelector } from './LapSelector'
+import { KPISummary } from './KPISummary'
+import { AlertsPanel } from './AlertsPanel'
 import { Loading } from './common/Loading'
 import { ErrorState } from './common/ErrorState'
 import { EmptyState } from './common/EmptyState'
@@ -38,13 +38,11 @@ export function DashboardLayout() {
     return bestLapNumber // out of range for this session → reset to best
   }, [lapChoice, laps, bestLapNumber])
 
-  // Session-level data (KPIs) + polled data (telemetry, alerts). The hooks
-  // are always called (Rules of Hooks); their results feed future KPI/chart/
-  // alert components. Telemetry is gated on laps being loaded so the first
-  // request carries the best lap rather than "All laps".
-  useSession(sessionId)
+  // Session-level KPIs are fetched inside KPISummary (useSession); alerts are
+  // polled inside AlertsPanel (useAlerts). Telemetry is warmed here for the
+  // charts feature and is gated on laps being loaded so the first request
+  // carries the best lap rather than "All laps".
   useTelemetry({ sessionId, lap: lapsReady ? effectiveLap : undefined, enabled: lapsReady })
-  useAlerts(sessionId)
 
   function handleSessionChange(id: number) {
     setSessionId(id)
@@ -105,11 +103,8 @@ export function DashboardLayout() {
       </div>
 
       <section className="dashboard-body">
-        {/* KPI summary, alerts panel, and charts are rendered by later
-            features. The data layer (hooks) is wired so they can plug in. */}
-        <p className="placeholder">
-          KPI summary, alerts panel, and charts populate here.
-        </p>
+        <KPISummary sessionId={sessionId} />
+        <AlertsPanel sessionId={sessionId} />
       </section>
     </div>
   )

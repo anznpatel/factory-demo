@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useLaps } from '../hooks/useLaps'
 import { useSessions } from '../hooks/useSessions'
-import { useTelemetry } from '../hooks/useTelemetry'
 import { DEFAULT_SESSION_ID } from '../config'
 import { SessionSelector } from './SessionSelector'
 import { LapSelector } from './LapSelector'
 import { KPISummary } from './KPISummary'
 import { AlertsPanel } from './AlertsPanel'
+import { ChartsGrid } from './charts/ChartsGrid'
 import { Loading } from './common/Loading'
 import { ErrorState } from './common/ErrorState'
 import { EmptyState } from './common/EmptyState'
@@ -39,10 +39,9 @@ export function DashboardLayout() {
   }, [lapChoice, laps, bestLapNumber])
 
   // Session-level KPIs are fetched inside KPISummary (useSession); alerts are
-  // polled inside AlertsPanel (useAlerts). Telemetry is warmed here for the
-  // charts feature and is gated on laps being loaded so the first request
-  // carries the best lap rather than "All laps".
-  useTelemetry({ sessionId, lap: lapsReady ? effectiveLap : undefined, enabled: lapsReady })
+  // polled inside AlertsPanel (useAlerts). Telemetry is fetched inside
+  // ChartsGrid, gated on laps being loaded so the first request carries the
+  // best lap rather than "All laps".
 
   function handleSessionChange(id: number) {
     setSessionId(id)
@@ -105,6 +104,7 @@ export function DashboardLayout() {
       <section className="dashboard-body">
         <KPISummary sessionId={sessionId} />
         <AlertsPanel sessionId={sessionId} />
+        <ChartsGrid sessionId={sessionId} lap={effectiveLap} enabled={lapsReady} />
       </section>
     </div>
   )

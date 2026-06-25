@@ -1,4 +1,4 @@
-import type { Alert, Lap, SessionDetail, SessionSummary } from '../api/types'
+import type { Alert, Lap, SessionDetail, SessionSummary, TelemetryResponse, TelemetrySample } from '../api/types'
 
 export const sessions: SessionSummary[] = [
   {
@@ -94,17 +94,61 @@ export const alerts: Alert[] = [
   },
 ]
 
-export function makeTelemetry(sessionId: number, lap: number | null) {
+// Build a deterministic set of telemetry samples with ALL 13 signals so every
+// chart (speed, rpm/gear, throttle/brake, tire temps, g-force) has data to
+// render. `count` controls how many samples are produced.
+function buildSamples(count: number): TelemetrySample[] {
+  const samples: TelemetrySample[] = []
+  for (let i = 0; i < count; i++) {
+    const t = i * 1000
+    const phase = (i / count) * Math.PI * 2
+    samples.push({
+      t_ms: t,
+      speed_kph: 120 + 80 * Math.sin(phase),
+      rpm: 5000 + 3000 * Math.sin(phase),
+      gear: (i % 7) + 1,
+      throttle_pct: 50 + 40 * Math.sin(phase),
+      brake_pct: 50 + 40 * Math.sin(phase + Math.PI),
+      steering_deg: 30 * Math.sin(phase * 2),
+      tire_temp_fl: 90 + 10 * Math.sin(phase),
+      tire_temp_fr: 88 + 10 * Math.sin(phase + 0.5),
+      tire_temp_rl: 92 + 10 * Math.sin(phase + 1.0),
+      tire_temp_rr: 91 + 10 * Math.sin(phase + 1.5),
+      g_lat: 2 * Math.sin(phase),
+      g_long: 1.5 * Math.cos(phase),
+      fuel_pct: 100 - (i / count) * 50,
+    })
+  }
+  return samples
+}
+
+const TELEMETRY_SAMPLES = buildSamples(15)
+
+export function makeTelemetry(sessionId: number, lap: number | null): TelemetryResponse {
+  // For "All laps" (lap === null) return more samples than a single lap.
+  const count = lap === null ? 30 : 15
+  const samples = lap === null ? buildSamples(30) : TELEMETRY_SAMPLES
   return {
     session_id: sessionId,
     lap,
-    signals: ['speed_kph', 'rpm'],
-    sample_count: 858,
-    returned_count: 2,
-    downsampled: true,
-    samples: [
-      { t_ms: 0, speed_kph: 303.82, rpm: 4732 },
-      { t_ms: 17200, speed_kph: 171.17, rpm: 4465 },
+    signals: [
+      'speed_kph',
+      'rpm',
+      'gear',
+      'throttle_pct',
+      'brake_pct',
+      'steering_deg',
+      'tire_temp_fl',
+      'tire_temp_fr',
+      'tire_temp_rl',
+      'tire_temp_rr',
+      'g_lat',
+      'g_long',
+      'fuel_pct',
     ],
+    sample_count: count * 57,
+    returned_count: count,
+    downsampled: true,
+    samples,
   }
 }

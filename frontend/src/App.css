@@ -122,3 +122,25 @@ header h1 {
 .alert-message {
   color: inherit;
 }
+
+/* Charts Grid */
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1.5rem;
+}
+
+.chart-wrapper {
+  padding: 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  min-width: 0;
+}
+
+.chart-wrapper h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: #374151;
+}

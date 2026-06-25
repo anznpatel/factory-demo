@@ -274,10 +274,10 @@ No secrets are required or committed. The SQLite DB, `backend/.venv`, `frontend/
 
 Requires Python 3.12 (with `python3.12-venv`), Node 20 LTS, and npm.
 
-The idempotent `init.sh` ensures `python3.12-venv`, creates the backend venv (`backend/.venv`), installs backend requirements, and runs `npm install` for the frontend if `node_modules` is missing:
+The idempotent `init.sh` at the repository root ensures `python3.12-venv`, creates the backend venv (`backend/.venv`), installs backend requirements, and runs `npm install` for the frontend if `node_modules` is missing. Run it from the repository root:
 
 ```bash
-bash init.sh
+bash init.sh            # from the repository root
 # -> "init.sh: environment ready"
 ```
 

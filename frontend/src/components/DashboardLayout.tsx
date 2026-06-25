@@ -112,6 +112,10 @@ export function DashboardLayout() {
             message="Failed to load laps"
             onRetry={() => void lapsQuery.refetch()}
           />
+        ) : lapsQuery.isLoading && laps.length === 0 ? (
+          <Loading label="Loading laps…" />
+        ) : laps.length === 0 ? (
+          <EmptyState message="No laps available for this session" />
         ) : (
           <ChartsGrid sessionId={sessionId} lap={effectiveLap} enabled={lapsReady} />
         )}

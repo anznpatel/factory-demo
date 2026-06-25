@@ -51,7 +51,7 @@ const SESSION_DETAILS: Record<number, SessionDetail> = {
     lap_count: 4,
     kpis: {
       top_speed_kph: 348.21,
-      best_lap_ms: 88450,
+      best_lap_ms: 84300,
       avg_throttle_pct: 71.34,
       max_tire_temp_c: 118.2,
     },
@@ -243,6 +243,16 @@ describe('Live polling & integration (VAL-UI-LIVE-001..005)', () => {
   })
 
   // VAL-UI-LIVE-001: Every rendered surface traces to a real :8000 backend response
+  //
+  // Intent & scope: This MSW-mocked unit test can only verify the REQUEST URL
+  // SHAPE — that every /api/* call targets http://localhost:8000 (never the
+  // page origin :5173, never a local fixture path) and that each core endpoint
+  // family is exercised at least once. Because responses are served by MSW
+  // handlers (not a live uvicorn process), this test CANNOT prove the data
+  // came from a real backend; that live-data proof is the responsibility of
+  // the browser validator (VAL-UI-LIVE-001 via agent-browser against the real
+  // :8000), not this unit test. The assertions below are deliberately scoped
+  // to URL shape only.
   it('all /api/* requests target http://localhost:8000 (none to :5173 or fixtures)', async () => {
     const tracker = makeTracker()
     installHandlers(tracker)
@@ -261,6 +271,7 @@ describe('Live polling & integration (VAL-UI-LIVE-001..005)', () => {
     ]
     expect(allUrls.length).toBeGreaterThan(0)
     for (const url of allUrls) {
+      // URL-shape only: host must be the configured API base :8000.
       expect(url.startsWith('http://localhost:8000/api/')).toBe(true)
       expect(url.includes(':5173')).toBe(false)
     }
@@ -684,8 +695,9 @@ describe('Cross-area flows (VAL-CROSS-001..006)', () => {
       expect(lapSelect().querySelectorAll('option')).toHaveLength(5)
     })
 
-    // Lap resets to Monza's best lap (lap 2), NOT lap 6 (which is out of range).
-    await waitFor(() => expect(lapSelect()).toHaveValue('2'))
+    // Lap resets to Monza's best lap (lap 3, matching the real seed), NOT
+    // lap 6 (which is out of range for Monza's 4 laps).
+    await waitFor(() => expect(lapSelect()).toHaveValue('3'))
 
     // KPIs update to Monza values.
     await waitFor(() => {

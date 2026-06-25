@@ -200,6 +200,91 @@ describe('Integration polish: shell states (VAL-UI-SHELL-002..005)', () => {
     expect(lapSelect).toBeDisabled()
   })
 
+  it('shows a loading indicator while laps are in flight (sessions already loaded)', async () => {
+    // Deferred laps response so we can observe the explicit laps loading
+    // state (sessions/KPIs/alerts resolve immediately; laps stays pending).
+    let resolveLaps: () => void = () => {}
+    const lapsPending = new Promise<void>((resolve) => {
+      resolveLaps = resolve
+    })
+    server.use(
+      http.get(`${BASE}/api/sessions`, () => HttpResponse.json(sessions)),
+      http.get(`${BASE}/api/sessions/:id`, ({ params }) =>
+        HttpResponse.json(makeSessionDetail(Number(params.id))),
+      ),
+      http.get(`${BASE}/api/sessions/:id/laps`, async () => {
+        await lapsPending
+        return HttpResponse.json(makeLaps(Number(1)))
+      }),
+      http.get(`${BASE}/api/sessions/:id/telemetry`, ({ request, params }) => {
+        const id = Number(params.id)
+        const url = new URL(request.url)
+        const lapParam = url.searchParams.get('lap')
+        const lap = lapParam === null ? null : Number(lapParam)
+        return HttpResponse.json(makeTelemetry(id, lap))
+      }),
+      http.get(`${BASE}/api/sessions/:id/alerts`, () => HttpResponse.json(alerts)),
+    )
+
+    renderWithQueryClient(<DashboardLayout />)
+
+    // Sessions + KPIs + alerts resolve; laps still pending → the explicit
+    // laps loading indicator is surfaced (not a perpetual telemetry spinner).
+    await waitFor(() => {
+      expect(screen.getByTestId('session-selector')).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      expect(screen.getByText('Loading laps…')).toBeInTheDocument()
+    })
+    // Lap selector is disabled while laps are unavailable.
+    expect(
+      screen.getByTestId('lap-selector').querySelector('select')!,
+    ).toBeDisabled()
+    // dashboard-root stays mounted.
+    expect(screen.getByTestId('dashboard-root')).toBeInTheDocument()
+
+    // Resolve laps → loading indicator clears and charts populate.
+    resolveLaps()
+    await waitFor(() => {
+      expect(screen.queryByText('Loading laps…')).toBeNull()
+      expect(screen.getByTestId('speed-chart')).toBeInTheDocument()
+    })
+  })
+
+  it('renders empty-state when laps return [] (no perpetual loading spinner)', async () => {
+    server.use(
+      http.get(`${BASE}/api/sessions`, () => HttpResponse.json(sessions)),
+      http.get(`${BASE}/api/sessions/:id`, ({ params }) => {
+        const id = Number(params.id)
+        return HttpResponse.json(makeSessionDetail(id))
+      }),
+      http.get(`${BASE}/api/sessions/:id/laps`, () => HttpResponse.json([])),
+      http.get(`${BASE}/api/sessions/:id/telemetry`, () =>
+        HttpResponse.json(makeTelemetry(1, null)),
+      ),
+      http.get(`${BASE}/api/sessions/:id/alerts`, () => HttpResponse.json(alerts)),
+    )
+
+    renderWithQueryClient(<DashboardLayout />)
+
+    // Sessions succeed but laps list is empty → explicit empty-state for laps
+    // (graceful degradation instead of relying on every session having laps).
+    await waitFor(() => {
+      expect(screen.getByTestId('empty-state')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('dashboard-root')).toBeInTheDocument()
+    expect(screen.getByTestId('session-selector')).toBeInTheDocument()
+    // KPIs and alerts are independent of laps and still populate.
+    await waitFor(() => {
+      expect(screen.getByTestId('kpi-top-speed')).toBeInTheDocument()
+    })
+    expect(screen.getByTestId('alerts-panel')).toBeInTheDocument()
+    // Lap selector is disabled (no laps to choose from).
+    expect(
+      screen.getByTestId('lap-selector').querySelector('select')!,
+    ).toBeDisabled()
+  })
+
   it('renders empty-state when telemetry returns no samples (induced empty)', async () => {
     server.use(
       http.get(`${BASE}/api/sessions`, () => HttpResponse.json(sessions)),

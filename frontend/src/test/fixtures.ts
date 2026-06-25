@@ -50,21 +50,30 @@ export function makeSessionDetail(id: number): SessionDetail {
   }
 }
 
-// Laps with is_best on lap 2 for every session (matches the real seed pattern
-// where lap 2 is the fastest for session 1).
+// Best-lap (lap_number + lap_time_ms) per session, aligned with the
+// deterministic seed so mocked tests don't diverge from the real backend
+// data (e.g. Monza's fastest lap is lap 3, not lap 2).
+const BEST_LAP_BY_SESSION: Record<number, { lap: number; time: number }> = {
+  1: { lap: 2, time: 81200 },
+  2: { lap: 3, time: 84300 },
+  3: { lap: 2, time: 87500 },
+}
+
 export function makeLaps(sessionId: number): Lap[] {
   const total = sessions.find((s) => s.id === sessionId)?.total_laps ?? 5
+  const best = BEST_LAP_BY_SESSION[sessionId] ?? { lap: 2, time: 81200 }
   const laps: Lap[] = []
   let started = 0
   for (let n = 1; n <= total; n++) {
-    const lapTime = n === 2 ? 81200 : 90000 + n * 100
+    const isBest = n === best.lap
+    const lapTime = isBest ? best.time : 90000 + n * 100
     laps.push({
       id: (sessionId - 1) * 10 + n,
       session_id: sessionId,
       lap_number: n,
       lap_time_ms: lapTime,
       started_at_ms: started,
-      is_best: n === 2,
+      is_best: isBest,
     })
     started += lapTime
   }

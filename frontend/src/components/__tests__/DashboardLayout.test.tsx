@@ -173,9 +173,9 @@ describe('DashboardLayout selection state', () => {
         screen.getByTestId('lap-selector').querySelectorAll('option'),
       ).toHaveLength(5)
     })
-    // Reset to Monza best lap (lap 2), not "All laps".
+    // Reset to Monza best lap (lap 3, matching the real seed), not "All laps".
     await waitFor(() => {
-      expect(lapSelectorSelect()).toHaveValue('2')
+      expect(lapSelectorSelect()).toHaveValue('3')
     })
   })
 

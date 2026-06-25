@@ -16,7 +16,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import init_db
 from app.generator import seed_demo
+from app.routers import alerts as alerts_router
 from app.routers import sessions as sessions_router
+from app.routers import telemetry as telemetry_router
 
 
 @asynccontextmanager
@@ -37,6 +39,8 @@ app.add_middleware(
 )
 
 app.include_router(sessions_router.router)
+app.include_router(telemetry_router.router)
+app.include_router(alerts_router.router)
 
 
 @app.get("/api/health")

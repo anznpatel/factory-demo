@@ -13,35 +13,13 @@ response models. Not-found sessions raise the canonical 404.
 
 from __future__ import annotations
 
-import sqlite3
-from collections.abc import Iterator
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 
 from app import queries
-from app.db import connect
 from app.models import Lap, SessionDetail, SessionSummary
+from app.routers.deps import Conn, require_session
 
 router = APIRouter(prefix="/api", tags=["sessions"])
-
-
-def get_conn() -> Iterator[sqlite3.Connection]:
-    """Yield a dict-row SQLite connection, closing it after the request."""
-    conn = connect()
-    try:
-        yield conn
-    finally:
-        conn.close()
-
-
-Conn = Annotated[sqlite3.Connection, Depends(get_conn)]
-
-
-def _require_session(conn: sqlite3.Connection, session_id: int) -> None:
-    """Raise the canonical 404 if the session id does not exist."""
-    if not queries.session_exists(conn, session_id):
-        raise HTTPException(status_code=404, detail="Session not found")
 
 
 @router.get("/sessions", response_model=list[SessionSummary])
@@ -63,6 +41,6 @@ def get_session(session_id: int, conn: Conn) -> SessionDetail:
 @router.get("/sessions/{session_id}/laps", response_model=list[Lap])
 def list_laps(session_id: int, conn: Conn) -> list[Lap]:
     """GET /api/sessions/{id}/laps -> laps for the session ordered by lap_number."""
-    _require_session(conn, session_id)
+    require_session(conn, session_id)
     rows = queries.get_laps(conn, session_id)
     return [Lap(**row) for row in rows]

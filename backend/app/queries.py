@@ -13,8 +13,79 @@ KPI definitions (architecture.md Section 4):
 
 from __future__ import annotations
 
+import math
 import sqlite3
 from typing import Any
+
+# The 13 valid telemetry signal names, in canonical (contract) order. This is
+# the default signal set returned when ``signals`` is omitted.
+ALL_SIGNALS: tuple[str, ...] = (
+    "speed_kph",
+    "rpm",
+    "gear",
+    "throttle_pct",
+    "brake_pct",
+    "steering_deg",
+    "tire_temp_fl",
+    "tire_temp_fr",
+    "tire_temp_rl",
+    "tire_temp_rr",
+    "g_lat",
+    "g_long",
+    "fuel_pct",
+)
+
+_VALID_SIGNALS: frozenset[str] = frozenset(ALL_SIGNALS)
+
+
+class UnknownSignalError(ValueError):
+    """Raised when a requested signal name is not in the valid set."""
+
+
+def parse_signals(raw: str | None) -> list[str]:
+    """Parse a CSV ``signals`` query param into a de-duplicated, validated list.
+
+    Missing or blank -> the full 13-signal default set (canonical order).
+    Otherwise split on commas, strip whitespace, drop empty fragments, de-dup
+    while preserving the first-seen order, and reject unknown names via
+    ``UnknownSignalError``.
+    """
+    if raw is None or raw.strip() == "":
+        return list(ALL_SIGNALS)
+    seen: list[str] = []
+    seen_set: set[str] = set()
+    for part in raw.split(","):
+        name = part.strip()
+        if name == "":
+            continue
+        if name not in _VALID_SIGNALS:
+            raise UnknownSignalError(name)
+        if name not in seen_set:
+            seen.append(name)
+            seen_set.add(name)
+    return seen
+
+
+def _downsample(n: int, max_points: int) -> tuple[list[int], bool]:
+    """Return (selected indices, downsampled flag) for ``n`` matched rows.
+
+    When ``n <= max_points`` every row is kept (downsampled=False). Otherwise an
+    evenly strided subset (stride = ceil(n / max_points)) is returned that
+    always retains the first and last matched rows and never exceeds
+    ``max_points`` entries (downsampled=True).
+    """
+    if n <= max_points:
+        return list(range(n)), False
+    stride = math.ceil(n / max_points)
+    idx = list(range(0, n, stride))
+    if idx and idx[-1] != n - 1:
+        # Keep the endpoint without exceeding the cap: append when there is
+        # room, otherwise swap out the last strided index for the true last.
+        if len(idx) < max_points:
+            idx.append(n - 1)
+        else:
+            idx[-1] = n - 1
+    return idx, True
 
 # The 9 summary columns, in contract order, used to project session rows.
 _SESSION_COLUMNS = (
@@ -127,3 +198,98 @@ def get_session_detail(conn: sqlite3.Connection, session_id: int) -> dict[str, A
     lap_count = get_lap_count(conn, session_id)
     kpis = compute_kpis(conn, session_id)
     return {**summary, "lap_count": lap_count, "kpis": kpis}
+
+
+def get_telemetry(
+    conn: sqlite3.Connection,
+    session_id: int,
+    lap: int | None,
+    signals: list[str],
+    from_ms: int | None,
+    to_ms: int | None,
+    max_points: int,
+) -> dict[str, Any]:
+    """Fetch, filter, downsample, and project telemetry for a session.
+
+    Rows are matched from ``telemetry_samples`` joined to ``laps`` (for
+    lap_number) and filtered by the optional lap number and inclusive
+    [from_ms, to_ms] time window. The matched rows are ordered by
+    (lap_number, t_ms), downsampled to at most ``max_points`` samples (first
+    and last retained), then projected to ``t_ms`` plus the requested signals.
+
+    ``sample_count`` is the number of matched rows (independent of max_points
+    and signals); ``returned_count`` is the number of samples after
+    downsampling; ``downsampled`` is True iff sample_count > max_points.
+
+    Assumes the session exists and ``signals`` is already validated/de-duped.
+    """
+    signal_cols = ", ".join(f"t.{s}" for s in signals)
+    sql = (
+        f"SELECT t.t_ms, {signal_cols}, l.lap_number "
+        "FROM telemetry_samples t JOIN laps l ON t.lap_id = l.id "
+        "WHERE t.session_id = ?"
+    )
+    params: list[Any] = [session_id]
+    if lap is not None:
+        sql += " AND l.lap_number = ?"
+        params.append(lap)
+    if from_ms is not None:
+        sql += " AND t.t_ms >= ?"
+        params.append(from_ms)
+    if to_ms is not None:
+        sql += " AND t.t_ms <= ?"
+        params.append(to_ms)
+    sql += " ORDER BY l.lap_number ASC, t.t_ms ASC"
+
+    rows = conn.execute(sql, params).fetchall()
+    sample_count = len(rows)
+    indices, downsampled = _downsample(sample_count, max_points)
+
+    samples: list[dict[str, Any]] = []
+    for i in indices:
+        row = rows[i]
+        sample: dict[str, Any] = {"t_ms": row["t_ms"]}
+        for s in signals:
+            sample[s] = row[s]
+        samples.append(sample)
+
+    return {
+        "session_id": session_id,
+        "lap": lap,
+        "signals": signals,
+        "sample_count": sample_count,
+        "returned_count": len(samples),
+        "downsampled": downsampled,
+        "samples": samples,
+    }
+
+
+# The 8 alert columns exposed by the contract, in contract order. lap_number
+# is joined from the laps table (alerts only store lap_id).
+_ALERT_COLUMNS = (
+    "a.id, a.session_id, a.lap_id, l.lap_number, a.t_ms, a.type, a.severity, a.message"
+)
+
+
+def get_alerts(
+    conn: sqlite3.Connection,
+    session_id: int,
+    severity: str | None,
+) -> list[dict[str, Any]]:
+    """Return alerts for a session, optionally filtered by severity.
+
+    Ordered by (lap_number, t_ms) ascending. ``lap_number`` is joined from
+    laps. Assumes the session exists and ``severity`` (if given) is valid.
+    """
+    sql = (
+        f"SELECT {_ALERT_COLUMNS} "
+        "FROM alerts a JOIN laps l ON a.lap_id = l.id "
+        "WHERE a.session_id = ?"
+    )
+    params: list[Any] = [session_id]
+    if severity is not None:
+        sql += " AND a.severity = ?"
+        params.append(severity)
+    sql += " ORDER BY l.lap_number ASC, a.t_ms ASC"
+    rows = conn.execute(sql, params).fetchall()
+    return list(rows)

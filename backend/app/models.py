@@ -7,6 +7,8 @@ validation. Field order follows the contract listing.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -58,3 +60,33 @@ class Lap(BaseModel):
     lap_time_ms: int
     started_at_ms: int
     is_best: bool
+
+
+class TelemetryResponse(BaseModel):
+    """GET /api/sessions/{id}/telemetry response (architecture.md Section 4).
+
+    ``lap`` is null when the lap param is omitted (whole session). ``samples``
+    is a list of dicts each containing ``t_ms`` plus the requested signals, so
+    the per-sample key set varies with the projection; hence ``list[dict]``.
+    """
+
+    session_id: int
+    lap: int | None
+    signals: list[str]
+    sample_count: int
+    returned_count: int
+    downsampled: bool
+    samples: list[dict[str, Any]]
+
+
+class Alert(BaseModel):
+    """One alert row: the 8 contract fields (lap_number joined from laps)."""
+
+    id: int
+    session_id: int
+    lap_id: int
+    lap_number: int
+    t_ms: int
+    type: str
+    severity: str
+    message: str

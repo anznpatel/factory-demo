@@ -1,0 +1,6 @@
+/* Global resets; component styles live in App.css. */
+html,
+body {
+  margin: 0;
+  padding: 0;
+}

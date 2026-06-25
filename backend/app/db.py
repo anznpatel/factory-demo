@@ -108,8 +108,18 @@ def get_db_path() -> str:
 
 
 def connect(db_path: str | None = None) -> sqlite3.Connection:
-    """Open a connection with dict rows and foreign keys enforced."""
-    conn = sqlite3.connect(db_path if db_path is not None else get_db_path())
+    """Open a connection with dict rows and foreign keys enforced.
+
+    ``check_same_thread=False`` is required because FastAPI runs sync
+    endpoints in a worker thread pool, so a connection created in one worker
+    thread may be closed in another. Each request gets its own connection
+    (see ``routers/deps.get_conn``), so connections are never shared across
+    threads concurrently.
+    """
+    conn = sqlite3.connect(
+        db_path if db_path is not None else get_db_path(),
+        check_same_thread=False,
+    )
     conn.row_factory = _dict_factory
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
